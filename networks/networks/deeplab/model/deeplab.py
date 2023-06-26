@@ -70,12 +70,42 @@ class DeepLab(nn.Module):
                         for p in m[1].parameters():
                             if p.requires_grad:
                                 yield p
+class SPBlock(nn.Layer):
+    def __init__(self, inplanes, outplanes, norm_layer=None):
+        super(SPBlock, self).__init__()
+        midplanes = outplanes
+        self.conv1 = nn.Conv2D(inplanes, midplanes, kernel_size=(3, 1), padding=(1, 0), bias_attr=False)
+        self.bn1 = nn.BatchNorm(midplanes)
+        self.conv2 = nn.Conv2D(inplanes, midplanes, kernel_size=(1, 3), padding=(0, 1), bias_attr=False)
+        self.bn2 = nn.BatchNorm(midplanes)
+        self.conv3 = nn.Conv2D(midplanes, outplanes, kernel_size=1, bias_attr=True)
+        self.pool1 = nn.AdaptiveAvgPool2D((None, 1))
+        self.pool2 = nn.AdaptiveAvgPool2D((1, None))
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
 
+    def forward(self, x):
+        identity = x
+        _, _, h, w = x.shape
+        x1 = self.pool1(x)
+        x1 = self.conv1(x1)
+        x1 = self.bn1(x1)
+        x1 = paddle.expand(x1,[-1, -1, h, w])
+        #x1 = F.interpolate(x1, (h, w))
+
+        x2 = self.pool2(x)
+        x2 = self.conv2(x2)
+        x2 = self.bn2(x2)
+        x2 = paddle.expand(x2,[-1, -1, h, w])
+        #x2 = F.interpolate(x2, (h, w))
+
+        x = self.relu(x1 + x2)
+        x = x * self.sigmoid(self.conv3(x))
+        return x
 if __name__ == "__main__":
     model = DeepLab(backbone='mobilenet', output_stride=16)
     model.eval()
     input = torch.rand(1, 3, 513, 513)
     output = model(input)
     print(output.size())
-
 
